@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Healthcare Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+
+        #alert-box {
+            width: 100%;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            display: none; /* Hidden by default, will be shown dynamically */
+        }
+
+        .alert-high {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .alert-low {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #prediction-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        #predicted-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        canvas {
+            flex: 1;
+            margin: 0 10px; /* Space between charts */
+            max-width: 300px; /* Optional: Limit width for responsive design */
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Smart Healthcare Resource Demand Prediction</h1>
+
+<div id="alert-box" class="alert"></div>
+
+<div id="prediction-container">
+    <p id="predicted-value">Awaiting prediction...</p>
+</div>
+
+<!-- Chart Container for Heart Rate, Oxygen Level, and Prediction -->
+<div class="chart-container">
+    <div>
+        <h2>Heart Rate</h2>
+        <canvas id="heartRateChart"></canvas>
+    </div>
+    <div>
+        <h2>Oxygen Level</h2>
+        <canvas id="oxygenLevelChart"></canvas>
+    </div>
+    <div>
+        <h2>Predicted Resource Demand</h2>
+        <canvas id="predictionChart"></canvas>
+    </div>
+</div>
+
+<!-- Table for Displaying Recent Predictions -->
+<table>
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Predicted Resource Demand</th>
+        </tr>
+    </thead>
+    <tbody id="prediction-table">
+        <!-- Data will be dynamically added here -->
+    </tbody>
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const heartRateCtx = document.getElementById('heartRateChart').getContext('2d');
+const oxygenLevelCtx = document.getElementById('oxygenLevelChart').getContext('2d');
+const predictionCtx = document.getElementById('predictionChart').getContext('2d');
+
+const heartRateChart = new Chart(heartRateCtx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Heart Rate',
+            data: [],
+            borderColor: 'rgba(75, 192, 192, 1)',
+            fill: false,
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+const oxygenLevelChart = new Chart(oxygenLevelCtx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Oxygen Level',
+            data: [],
+            borderColor: 'rgba(153, 102, 255, 1)',
+            fill: false,
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+const predictionChart = new Chart(predictionCtx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Predicted Resource Demand',
+            data: [],
+            borderColor: 'rgba(75, 192, 192, 1)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            fill: true,
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: {
+                title: {
+                    display: true,
+                    text: 'Time'
+                }
+            },
+            y: {
+                title: {
+                    display: true,
+                    text: 'Resource Demand'
+                },
+                suggestedMin: 0,
+                suggestedMax: 100
+            }
+        }
+    }
+});
+
+// Function to fetch data from the API
+function fetchData() {
+    fetch('/api/data')
+        .then(response => response.json())
+        .then(data => {
+            // Update Heart Rate Chart
+            heartRateChart.data.labels = data.health_data.map((_, index) => index + 1);
+            heartRateChart.data.datasets[0].data = data.health_data.map(d => d.heart_rate);
+            heartRateChart.update();
+
+            // Update Oxygen Level Chart
+            oxygenLevelChart.data.labels = data.health_data.map((_, index) => index + 1);
+            oxygenLevelChart.data.datasets[0].data = data.health_data.map(d => d.oxygen_level);
+            oxygenLevelChart.update();
+        })
+        .catch(error => console.error('Error fetching data:', error));
+}
+
+// Automatically fetch data every 5 seconds
+setInterval(fetchData, 5000);
+
+// Connect to the Redis API that publishes resource alerts
+const eventSource = new EventSource('/api/alerts');
+
+// Function to display alert and prediction dynamically
+eventSource.onmessage = function(event) {
+    const alertData = JSON.parse(event.data);
+    const alertBox = document.getElementById('alert-box');
+    const predictedValueElement = document.getElementById('predicted-value');
+    const predictionTable = document.getElementById('prediction-table');
+
+    // Get the current timestamp for displaying in the table
+    const timestamp = new Date().toLocaleString();
+
+    // Update the predicted value
+    predictedValueElement.innerHTML = `Predicted Resource Demand: ${alertData.prediction}`;
+
+    // Display the alert based on status
+    if (alertData.status === 'high') {
+        alertBox.className = 'alert alert-high';
+        alertBox.style.display = 'block';  // Show the alert
+        alertBox.innerHTML = alertData.message;
+    } else {
+        alertBox.className = 'alert alert-low';
+        alertBox.style.display = 'block';  // Show the alert
+        alertBox.innerHTML = alertData.message;
+    }
+
+    // Update the prediction table
+    const newRow = predictionTable.insertRow();
+    const cell1 = newRow.insertCell(0);
+    const cell2 = newRow.insertCell(1);
+    cell1.innerHTML = timestamp;
+    cell2.innerHTML = alertData.prediction;
+
+    // Update the prediction chart with new data
+    predictionChart.data.labels.push(timestamp);
+    predictionChart.data.datasets[0].data.push(alertData.prediction);
+    predictionChart.update();
+};
+
+// Ensure that the eventSource connection closes properly when the page is unloaded
+window.addEventListener('beforeunload', function() {
+    eventSource.close();
+});
+</script>
+
+</body>
+</html>

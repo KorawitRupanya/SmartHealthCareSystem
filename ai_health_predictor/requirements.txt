@@ -1,0 +1,3 @@
+redis
+scikit-learn
+numpy
